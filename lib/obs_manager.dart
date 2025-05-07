@@ -49,18 +49,18 @@ addVideoSource(MediaFile mediaFile) async {
     'sceneUuid': mainScene!.sceneUuid,
     'inputKind': 'ffmpeg_source',
     'inputName': randomId,
-    'inputSettings': {"is_local_file": false, 'input': mediaFile.url, "looping": false},
+    'inputSettings': {"is_local_file": false, 'input': mediaFile.url, "looping": false, "buffering_mb": 3},
   };
   var responseCreateInput = await obsWebSocket.send('CreateInput', querySource);
   Map<String, dynamic>? sceneItemResponse = responseCreateInput?.responseData;
   print("Result addVideoSource : " + (responseCreateInput?.requestStatus.comment ?? "Error"));
-  if (responseCreateInput!.requestStatus.result == false) {
-    querySource = {
-      'inputName': 'Input',
-      'inputSettings': {"is_local_file": false, 'input': mediaFile.url, "looping": false},
-    };
-    responseCreateInput = await obsWebSocket.send('SetInputSettings', querySource);
-  }
+  // if (responseCreateInput!.requestStatus.result == false) {
+  //   querySource = {
+  //     'inputName': 'Input',
+  //     'inputSettings': {"is_local_file": false, 'input': mediaFile.url, "looping": false},
+  //   };
+  //   responseCreateInput = await obsWebSocket.send('SetInputSettings', querySource);
+  // }
   if (sceneItemResponse != null) {
     print('Scene Item Added: ${sceneItemResponse.toString()}');
   }
@@ -108,7 +108,7 @@ addInfoSource(String id, MediaFile mediaFile) async {
     'inputName': "TextLayer-$id",
     'inputSettings': {
       "text": "${mediaFile.artist} - @${mediaFile.venue}\n${mediaFile.title}",
-      "font": {"face": "Krungthep", "style": "Regular", "size": 24, "flags": 1}
+      "font": {"face": "Krungthep", "style": "Regular", "size": 16, "flags": 1}
     },
   };
   var responseCreateInput = await obsWebSocket.send('CreateInput', query);
@@ -134,8 +134,8 @@ addInfoSource(String id, MediaFile mediaFile) async {
       "cropRight": 0,
       "cropTop": 0,
       // "height": 61.90977478027344,
-      "positionX": 16,
-      "positionY": 885,
+      "positionX": 30,
+      "positionY": 910,
       //"rotation": 0.0,
       "scaleX": 1.0,
       "scaleY": 1.0,

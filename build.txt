@@ -1,1 +1,1 @@
-dart compile exe bin/tnplayer.dart -o build/main.out
+dart compile exe lib/tnplayer.dart -o build/main.out
