@@ -1,36 +1,48 @@
-import 'dart:io';
-
+import 'package:tnplayer/tnapi.dart';
+import 'package:tnplayer/utils.dart';
 import 'package:uuid/uuid.dart';
-
 import 'tnplayer.dart';
 import 'package:obs_websocket/obs_websocket.dart';
 import 'models/MediaFile.dart';
-import 'player.dart';
 import 'models/TNScene.dart';
 import 'const.dart';
 import 'models/TNSceneItems.dart';
 
 Future<void> init() async {
+  print("Begin Time : $beginTime");
   obsWebSocket = await ObsWebSocket.connect(
-    'ws://192.168.0.10:4455',
+    'ws://127.0.0.1:4455',
     password: '12341234',
     fallbackEventHandler: (Event event) async {
       //print('type: ${event.eventType} data: ${event.eventData}');
       if (event.eventType == 'MediaInputPlaybackStarted') {
-        print('MediaInputPlaybackStarted');
+        //print('MediaInputPlaybackStarted');
       } else if (event.eventType == 'MediaInputPlaybackEnded') {
-        print('MediaInputPlaybackEnded');
-        MediaFile nextMedia = await randomMediaFile();
-        print("Next Media : " + nextMedia.url);
-        addVideoSource(nextMedia);
+        //print('MediaInputPlaybackEnded');
+        if (isWaitingApi == false) {
+          MediaFile? nextMedia = await TNApi.randomMediaFile();
+          if (nextMedia != null) {
+            await addVideoSource(nextMedia);
+            Duration duration = DateTime.now().difference(beginTime);
+            print(
+                "Next Media : ${nextMedia.toString()} Stream Duration : ${duration.inMinutes} minutes - Play Counter : $playCounter - Api Error Counter : $apiErrorCounter");
+          }
+        } else {
+          print("Waiting for API");
+          // show error ui
+        }
+      } else {
+        // print('Event: ${event.eventType} data: ${event.eventData}');
       }
     },
   );
   await obsWebSocket.subscribe(EventSubscription.all);
   await checkScenes();
-  MediaFile mediaFile = await randomMediaFile();
-  print("First Media : " + mediaFile.url);
-  await addVideoSource(mediaFile);
+  MediaFile? mediaFile = await TNApi.randomMediaFile();
+  if (mediaFile != null) {
+    print("First Media : ${mediaFile.toString()}");
+    await addVideoSource(mediaFile);
+  }
 }
 
 String sourceName() {
@@ -38,37 +50,26 @@ String sourceName() {
 }
 
 addVideoSource(MediaFile mediaFile) async {
-  print("after clean : $mainSceneItems");
+  playCounter++;
   await clearVideoSource();
-  print("Before clean : $mainSceneItems");
-  //Duration duration = Duration(seconds: 15);
-  //await Future.delayed(duration);
   String randomId = sourceName();
   var querySource = {
     'sceneName': mainScene!.sceneName,
     'sceneUuid': mainScene!.sceneUuid,
     'inputKind': 'ffmpeg_source',
     'inputName': randomId,
-    'inputSettings': {"is_local_file": false, 'input': mediaFile.url, "looping": false, "buffering_mb": 3},
+    'inputSettings': {
+      "is_local_file": false,
+      'input': mediaFile.url,
+      "looping": false,
+      "buffering_mb": 3,
+      "restart_on_activate": false,
+    },
   };
   var responseCreateInput = await obsWebSocket.send('CreateInput', querySource);
   Map<String, dynamic>? sceneItemResponse = responseCreateInput?.responseData;
-  print("Result addVideoSource : " + (responseCreateInput?.requestStatus.comment ?? "Error"));
-  // if (responseCreateInput!.requestStatus.result == false) {
-  //   querySource = {
-  //     'inputName': 'Input',
-  //     'inputSettings': {"is_local_file": false, 'input': mediaFile.url, "looping": false},
-  //   };
-  //   responseCreateInput = await obsWebSocket.send('SetInputSettings', querySource);
-  // }
-  if (sceneItemResponse != null) {
-    print('Scene Item Added: ${sceneItemResponse.toString()}');
-  }
+  responseToString(responseCreateInput, "addVideoSource");
   int sceneItemId = sceneItemResponse!['sceneItemId'];
-  String sceneItemUuid = sceneItemResponse['inputUuid'];
-  // var vs = await obsWebSocket.send('GetVideoSettings', {});
-  // final baseW = vs?.responseData?['baseWidth'] as int;
-  // final baseH = vs?.responseData?['baseHeight'] as int;
   var querySetPosition = {
     'sceneName': mainScene!.sceneName,
     'sceneUuid': mainScene!.sceneUuid,
@@ -83,21 +84,47 @@ addVideoSource(MediaFile mediaFile) async {
       "cropLeft": 0,
       "cropRight": 0,
       "cropTop": 0,
-      // "height": 61.90977478027344,
       "positionX": 0,
       "positionY": 0,
-      //"rotation": 0.0,
       "scaleX": 1.0,
       "scaleY": 1.0,
-      // "sourceHeight": 960.0,
-      // "sourceWidth": 540.0,
-      // "width": 540,
-      // "height": 960,
     }
   };
   var responseSetPosition = await obsWebSocket.send('SetSceneItemTransform', querySetPosition);
-  print("Result SetSceneItemTransform : " + (responseSetPosition?.requestStatus.comment ?? "Error"));
+  responseToString(responseSetPosition, "addVideoSourceSetSceneItemTransform");
+  await addDecorationBox(randomId);
   addInfoSource(randomId, mediaFile);
+}
+
+addDecorationBox(String id) async {
+  var query = {
+    'sceneName': mainScene!.sceneName,
+    'sceneUuid': mainScene!.sceneUuid,
+    'inputKind': 'color_source_v3',
+    'inputName': "BoxLayer-$id",
+    'inputSettings': {
+      "color": 4278190080,
+      "width": 540,
+      "height": 75,
+    },
+  };
+  var responseCreateInput = await obsWebSocket.send('CreateInput', query);
+  Map<String, dynamic>? sceneItemResponse = responseCreateInput?.responseData;
+  responseToString(responseCreateInput, "addDecorationBox");
+  int sceneItemId = sceneItemResponse!['sceneItemId'];
+  var querySetPosition = {
+    'sceneName': mainScene!.sceneName,
+    'sceneUuid': mainScene!.sceneUuid,
+    'sceneItemId': sceneItemId,
+    'sceneItemTransform': {
+      "positionX": 0,
+      "positionY": 885,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+    }
+  };
+  var responseSetPosition = await obsWebSocket.send('SetSceneItemTransform', querySetPosition);
+  responseToString(responseSetPosition, "addDecorationBoxSetSceneItemTransform");
 }
 
 addInfoSource(String id, MediaFile mediaFile) async {
@@ -107,18 +134,14 @@ addInfoSource(String id, MediaFile mediaFile) async {
     'inputKind': 'text_ft2_source_v2',
     'inputName': "TextLayer-$id",
     'inputSettings': {
-      "text": "${mediaFile.artist} - @${mediaFile.venue}\n${mediaFile.title}",
-      "font": {"face": "Krungthep", "style": "Regular", "size": 16, "flags": 1}
+      "text": "Performer : ${mediaFile.artist}\nVenue : ${mediaFile.venue}\n${mediaFile.titleStr()}",
+      "font": {"face": "Krungthep", "style": "Regular", "size": 18, "flags": 1}
     },
   };
   var responseCreateInput = await obsWebSocket.send('CreateInput', query);
   Map<String, dynamic>? sceneItemResponse = responseCreateInput?.responseData;
-  print("Result addInfoSource : " + (responseCreateInput?.requestStatus.comment ?? "Error"));
-  if (sceneItemResponse != null) {
-    print('Scene Text Item Added: ${sceneItemResponse.toString()}');
-  }
+  responseToString(responseCreateInput, "addInfoSource");
   int sceneItemId = sceneItemResponse!['sceneItemId'];
-  String sceneItemUuid = sceneItemResponse['inputUuid'];
   var querySetPosition = {
     'sceneName': mainScene!.sceneName,
     'sceneUuid': mainScene!.sceneUuid,
@@ -135,28 +158,29 @@ addInfoSource(String id, MediaFile mediaFile) async {
       "cropTop": 0,
       // "height": 61.90977478027344,
       "positionX": 30,
-      "positionY": 910,
+      "positionY": 890,
       //"rotation": 0.0,
       "scaleX": 1.0,
       "scaleY": 1.0,
     }
   };
   var responseSetPosition = await obsWebSocket.send('SetSceneItemTransform', querySetPosition);
-  print("Result SetSceneItemTransform : " + (responseSetPosition?.requestStatus.comment ?? "Error"));
+  responseToString(responseSetPosition, "addInfoSourceSetSceneItemTransform");
 }
 
 clearVideoSource() async {
   await getSceneItems(mainScene!);
   for (int i = 0; i < mainSceneItems.length; i++) {
-    print("Scene Item ID : ${mainSceneItems[i].sceneItemId} type : ${mainSceneItems[i].itemType}");
-    if (mainSceneItems[i].itemType == TNInputType.input || mainSceneItems[i].itemType == TNInputType.info) {
+    if (mainSceneItems[i].itemType == TNInputType.input ||
+        mainSceneItems[i].itemType == TNInputType.info ||
+        mainSceneItems[i].itemType == TNInputType.box) {
       var query = {
         'sceneName': mainScene!.sceneName,
         'sceneUuid': mainScene!.sceneUuid,
         'sceneItemId': mainSceneItems[i].sceneItemId,
       };
       var responseClearVideoSource = await obsWebSocket.send('RemoveSceneItem', query);
-      print("Result ClearVideoSource : ${responseClearVideoSource?.requestStatus.comment ?? "Error"}");
+      responseToString(responseClearVideoSource, "clearVideoSource");
     }
   }
   await getSceneItems(mainScene!);
@@ -167,7 +191,7 @@ createScene(String sceneName) async {
     'sceneName': sceneName,
   };
   var responseCreateScene = await obsWebSocket.send('CreateScene', query);
-  print("Result CreateScene ($sceneName): ${responseCreateScene?.requestStatus.comment ?? "Error"}");
+  responseToString(responseCreateScene, "createScene");
   await getSceneList();
 }
 
@@ -177,12 +201,11 @@ clearSources() async {
     'sceneUuid': currentProgramSceneUuid,
   };
   var responseClearSources = await obsWebSocket.send('RemoveSceneItem', query);
-  print("Result ClearSources : ${responseClearSources?.requestStatus.comment ?? "Error"}");
+  responseToString(responseClearSources, "clearSources");
 }
 
 checkScenes() async {
   await getSceneList();
-  print("Scenes List : $scenes");
   await checkMainScene();
   await deleteUnusedScenes();
   await initSceneItems();
@@ -190,7 +213,6 @@ checkScenes() async {
 
 initSceneItems() async {
   await clearMainSceneItems();
-  // add background
   await addBackground();
 }
 
@@ -205,23 +227,13 @@ addBackground() async {
   };
   var responseCreateInput = await obsWebSocket.send('CreateInput', query);
   Map<String, dynamic>? sceneItemResponse = responseCreateInput?.responseData;
-  print("Result : " + (responseCreateInput?.requestStatus.comment ?? "Error"));
-  if (sceneItemResponse != null) {
-    print('Scene Item Added: ${sceneItemResponse.toString()}');
-  }
+  responseToString(responseCreateInput, "addBackground");
   int sceneItemId = sceneItemResponse!['sceneItemId'];
-  String sceneItemUuid = sceneItemResponse['inputUuid'];
-
-  print("Scene Item ID : $sceneItemId");
-  print("Scene Item UUID : $sceneItemUuid");
-  // set position
   var querySetPosition = {
     'sceneName': mainScene!.sceneName,
     'sceneUuid': mainScene!.sceneUuid,
     'sceneItemId': sceneItemId,
     'sceneItemTransform': {
-      // "alignment": 1,
-      // "boundsAlignment": 0,
       "boundsHeight": 960,
       "boundsType": "OBS_BOUNDS_SCALE_TO_WIDTH",
       "boundsWidth": 540,
@@ -229,12 +241,8 @@ addBackground() async {
       "cropLeft": 0,
       "cropRight": 0,
       "cropTop": 0,
-      // "height": 61.90977478027344,
       "positionX": 0,
       "positionY": 0,
-      //"rotation": 0.0,
-      // "scaleX": 10,
-      // "scaleY": 10,
       "sourceHeight": 960.0,
       "sourceWidth": 540.0,
       "width": 540,
@@ -242,7 +250,7 @@ addBackground() async {
     }
   };
   var responseSetPosition = await obsWebSocket.send('SetSceneItemTransform', querySetPosition);
-  print("Result Backgroud SetSceneItemTransform : " + (responseSetPosition?.requestStatus.comment ?? "Error"));
+  responseToString(responseSetPosition, "addBackgroundSetSceneItemTransform");
 }
 
 deleteUnusedScenes() async {
@@ -253,7 +261,7 @@ deleteUnusedScenes() async {
         'sceneUuid': scenes[i].sceneUuid,
       };
       var responseDeleteScene = await obsWebSocket.send('RemoveScene', query);
-      print("Result DeleteScene : ${responseDeleteScene?.requestStatus.comment ?? "Error"}");
+      responseToString(responseDeleteScene, "deleteUnusedScenes");
     }
   }
 }
@@ -265,7 +273,7 @@ getSceneList() async {
     'sceneUuid': currentProgramSceneUuid,
   };
   var responseSceneList = await obsWebSocket.send('GetSceneList', query);
-  print("Result GetSceneList : ${responseSceneList?.requestStatus.comment ?? "Error"}");
+  responseToString(responseSceneList, "getSceneList");
   var sceneList = responseSceneList?.responseData?["scenes"];
   if (sceneList != null) {
     for (int i = 0; i < sceneList.length; i++) {
@@ -288,7 +296,6 @@ checkMainScene() async {
   } else {
     print("Main Scene already exists");
   }
-  print("Main Scene : $mainScene");
 }
 
 clearMainSceneItems() async {
@@ -300,9 +307,8 @@ clearMainSceneItems() async {
       'sceneItemId': mainSceneItems[i].sceneItemId,
     };
     var responseClearMainSceneItems = await obsWebSocket.send('RemoveSceneItem', query);
-    print("Result ClearMainSceneItems : ${responseClearMainSceneItems?.requestStatus.comment ?? "Error"}");
+    responseToString(responseClearMainSceneItems, "clearMainSceneItems");
   }
-  print("Main Scene Items Before Delete: $mainSceneItems");
 }
 
 getSceneItems(TNScene scene) async {
@@ -312,13 +318,12 @@ getSceneItems(TNScene scene) async {
     'sceneUuid': scene.sceneUuid,
   };
   var responseGetInputs = await obsWebSocket.send('GetSceneItemList', query);
-  //print("Result GetInputs : ${responseGetInputs?.requestStatus.comment ?? "Error"}");
+  responseToString(responseGetInputs, "getSceneItems");
   var inputs = responseGetInputs?.responseData?["sceneItems"];
   if (inputs != null) {
     for (int i = 0; i < inputs.length; i++) {
       TNSceneItems input = TNSceneItems.fromMap(inputs[i]);
       mainSceneItems.add(input);
     }
-    //print("Main Scene Items : $mainSceneItems");
   }
 }

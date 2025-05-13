@@ -21,7 +21,6 @@ class TNScene {
     return 'Scene{sceneIndex: $sceneIndex, sceneName: $sceneName, sceneUuid: $sceneUuid}';
   }
 
-  //TODO: Geliştirilebilir
   get sceneType {
     if (sceneName == mainSceneName) {
       return SceneType.main;

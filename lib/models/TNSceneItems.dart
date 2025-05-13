@@ -1,10 +1,10 @@
 import 'TNSceneItemTransform.dart';
-import '../const.dart';
 
 enum TNInputType {
   input,
   background,
   info,
+  box,
   other,
 }
 
@@ -58,6 +58,8 @@ class TNSceneItems {
       return TNInputType.input;
     } else if (inputKind == 'text_ft2_source_v2') {
       return TNInputType.info;
+    } else if (inputKind == 'color_source_v3') {
+      return TNInputType.box;
     }
     return TNInputType.other;
   }
